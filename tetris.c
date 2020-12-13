@@ -4,6 +4,9 @@
 #define WIDTH 10
 #define HEIGHT 20
 #define CUBE_WIDTH 20
+#define EMPTY 0
+#define DEAD 1
+#define ALIVE 2
 
 static void activate(GtkApplication *, gpointer);
 gboolean draw_callback(GtkWidget *, cairo_t *, gpointer);
@@ -14,7 +17,7 @@ gboolean move_right(void *);
 gboolean rotate(void *);
 gboolean on_key_press(GtkWidget *, GdkEventKey *, gpointer);
 
-int g_board[WIDTH][HEIGHT];
+uint32_t g_board[WIDTH][HEIGHT];
 GtkWidget *g_darea;
 typedef struct block {
   int x;
@@ -34,7 +37,7 @@ static void activate(GtkApplication *app, gpointer user_data) {
 
   for (int i = 0; i < WIDTH; i++) {
     for (int j = 0; j < HEIGHT; j++) {
-      g_board[i][j] = 0;
+      g_board[i][j] = EMPTY;
     }	    
   }
 
@@ -76,15 +79,12 @@ void add_tetromino(int board[][HEIGHT]) {
   if (g_tetromino != NULL) {
     return;
   }
-  if (board[0][0]) {
-    printf("loss\n");
-    return;
-  }
   g_tetromino = malloc(sizeof(tetromino_t));
   g_tetromino->blocks = malloc(4 * sizeof(block_t));
   time_t t;
   srand((unsigned) time(&t));
   int random = rand() % 7;
+  uint32_t col = 0x00000000;
   switch(random) {
     case 0 :
       (g_tetromino->blocks)[0].x = 0;
@@ -96,6 +96,7 @@ void add_tetromino(int board[][HEIGHT]) {
       (g_tetromino->blocks)[3].x = 3;
       (g_tetromino->blocks)[3].y = 0;
       g_tetromino->type = 'I';
+      col = 0x0000FF00;
       break;
     case 1 :
       (g_tetromino->blocks)[0].x = 0;
@@ -107,6 +108,7 @@ void add_tetromino(int board[][HEIGHT]) {
       (g_tetromino->blocks)[3].x = 2;
       (g_tetromino->blocks)[3].y = 1;
       g_tetromino->type = 'J';
+      col = 0x00FF0000;
       break;
     case 2 :
       (g_tetromino->blocks)[0].x = 0;
@@ -118,6 +120,7 @@ void add_tetromino(int board[][HEIGHT]) {
       (g_tetromino->blocks)[3].x = 0;
       (g_tetromino->blocks)[3].y = 1;
       g_tetromino->type = 'L';
+      col = 0xFF000000;
       break;
     case 3 :
       (g_tetromino->blocks)[0].x = 0;
@@ -129,6 +132,7 @@ void add_tetromino(int board[][HEIGHT]) {
       (g_tetromino->blocks)[3].x = 1;
       (g_tetromino->blocks)[3].y = 1;
       g_tetromino->type = 'O';
+      col = 0xFFFFFF00;
       break;
     case 4 :
       (g_tetromino->blocks)[0].x = 0;
@@ -140,6 +144,7 @@ void add_tetromino(int board[][HEIGHT]) {
       (g_tetromino->blocks)[3].x = 1;
       (g_tetromino->blocks)[3].y = 1;
       g_tetromino->type = 'T';
+      col = 0xFFFF0000;
       break;
     case 5 :
       (g_tetromino->blocks)[0].x = 0;
@@ -151,6 +156,7 @@ void add_tetromino(int board[][HEIGHT]) {
       (g_tetromino->blocks)[3].x = 2;
       (g_tetromino->blocks)[3].y = 1;
       g_tetromino->type = 'Z';
+      col = 0xFF00FF00;
       break;
     case 6 :
       (g_tetromino->blocks)[0].x = 2;
@@ -162,16 +168,18 @@ void add_tetromino(int board[][HEIGHT]) {
       (g_tetromino->blocks)[3].x = 0;
       (g_tetromino->blocks)[3].y = 1;
       g_tetromino->type = 'S';
+      col = 0x00FFFF00;
       break;
 
   }
   for (int i = 0; i < 4; i++) {
     int x =  (g_tetromino->blocks)[i].x;
     int y =  (g_tetromino->blocks)[i].y;
-    if (g_board[x][y] == 1) {
+    if (g_board[x][y] & 0xFF == DEAD) {
       printf("Game Over\n");
 
     }
+    g_board[x][y] = col + ALIVE;
   }
 }
 
@@ -184,7 +192,8 @@ void remove_tetromino(tetromino_t **tetromino) {
   for (int i = 0; i < 4; i++) {
     x = ((g_tetromino->blocks)[i]).x;
     y = ((g_tetromino->blocks)[i]).y;
-    g_board[x][y] = 1;
+    g_board[x][y] &= 0xFFFFFF00;
+    g_board[x][y] += DEAD;
   }
   free((*tetromino)->blocks);
   (*tetromino)->blocks = NULL;
@@ -197,7 +206,7 @@ void remove_tetromino(tetromino_t **tetromino) {
     }
     if (full == 1) {
       for (int j = 0; j < WIDTH; j++) {
-        g_board[j][i] = 0;
+        g_board[j][i] &= 0xFFFFFF00;
       }
       for (int k = i; k > 0; k--) {
         for (int j = 0; j < WIDTH; j++) {
@@ -205,7 +214,7 @@ void remove_tetromino(tetromino_t **tetromino) {
 	}
       }
       for (int j = 0; j < WIDTH; j++) {
-        g_board[j][0] = 0;
+        g_board[j][0] &= 0xFFFFFF00;
       }
     }
   }
@@ -226,18 +235,21 @@ gboolean update_board(void *data) {
       add_tetromino(board);
       i = 5;
     }
-    if (board[x][y + 1] == 1) {
+    int val = board[x][y + 1] & 0xFF;
+    if (val == DEAD) {
       remove_tetromino(&g_tetromino);
       add_tetromino(board);
       i = 5;
     }
   }
+  int col = board[((g_tetromino->blocks)[0]).x][((g_tetromino->blocks)[0]).y] & 0xFFFFFF00;
   for (int j = 3; j >= 0; j--) {
-    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = 0;
+    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = EMPTY;
     (((g_tetromino->blocks)[j]).y)++;
   }
   for (int j = 0; j < 4; j++) {
-    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = 2;
+    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = EMPTY;
+    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = ALIVE + col; 
   }
 
   gtk_widget_queue_draw((GtkWidget *) g_darea); 
@@ -264,15 +276,16 @@ gboolean rotate(void *data) {
           y = 3;
 	}
 	for (int i = 0; i < 4; i++) {
-	  if (board[x][y - i] == 1) {
+	  if (board[x][y - i] & 0xFF == DEAD) {
             return TRUE;
 	  }
 	}
+        int col = board[(g_tetromino->blocks)[0].x][(g_tetromino->blocks)[0].y] & 0xFFFFFF00;
 	for (int i = 0; i < 4; i++) {
- 	  board[(g_tetromino->blocks)[i].x][(g_tetromino->blocks)[i].y] = 0;
+ 	  board[(g_tetromino->blocks)[i].x][(g_tetromino->blocks)[i].y] = EMPTY;
 	}
 	for (int i = 0; i < 4; i++) {
-	  board[x][y - i] = 2;
+          board[x][y - i] = ALIVE + col;
 	  (g_tetromino->blocks)[i].x = x;
 	  (g_tetromino->blocks)[i].y = y - i;
 	}
@@ -286,15 +299,16 @@ gboolean rotate(void *data) {
           x = 3;
 	}
 	for (int i = 0; i < 4; i++) {
-	  if (board[x - i][y] == 1) {
+	  if (board[x - i][y] & 0xFF == DEAD) {
             return TRUE;
 	  }
 	}
+        uint32_t col = board[(g_tetromino->blocks)[0].x][(g_tetromino->blocks)[0].y] & 0xFFFFFF00; 
 	for (int i = 0; i < 4; i++) {
- 	  board[(g_tetromino->blocks)[i].x][(g_tetromino->blocks)[i].y] = 0;
+ 	  board[(g_tetromino->blocks)[i].x][(g_tetromino->blocks)[i].y] = EMPTY;
 	}
 	for (int i = 0; i < 4; i++) {
-	  board[x - i][y] = 2;
+	  board[x - i][y] = ALIVE + col;
 	  (g_tetromino->blocks)[i].x = x - i;
 	  (g_tetromino->blocks)[i].y = y;
 	}
@@ -308,14 +322,15 @@ gboolean rotate(void *data) {
       }
       for (int i = x - 1; i < x + 2; i++) {
         for (int j = y - 1; j < y + 2; j++) {
-          if (board[i][j] == 1) {
+          if (board[i][j] & 0xFF == DEAD) {
 	    return TRUE;
 	  }
 	}
       }
+      uint32_t col = board[x][y] & 0xFFFFFF00;
       for (int i = x - 1; i < x + 2; i++) {
         for (int j = y - 1; j < y + 2; j++) {
-          board[i][j] = 0;
+          board[i][j] = EMPTY;
 	}
       }
       for (int i = 0; i < 4; i++) {
@@ -351,8 +366,8 @@ gboolean rotate(void *data) {
 	}
 	x2 = (g_tetromino->blocks)[i].x;
         y2 = (g_tetromino->blocks)[i].y;
-	board[x2][y2] = 2;
- 
+	board[x2][y2] = EMPTY;
+	board[g_tetromino->blocks[i].x][g_tetromino->blocks[i].y] = ALIVE + col; 
       }}
   }
 
@@ -375,17 +390,18 @@ gboolean move_left(void *data) {
     if (x == 0) {
       return FALSE;
     }
-    if (board[x - 1][y] == 1) {
+    int val = board[x - 1][y] & 0xFF;
+    if (val == DEAD) {
       return FALSE;
     }
   }
-
+  int col = board[((g_tetromino->blocks)[0]).x][((g_tetromino->blocks)[0]).y] & 0xFFFFFF00; 
   for (int j = 0; j < 4; j++) {
-    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = 0;
+    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = EMPTY;
     (((g_tetromino->blocks)[j]).x)--;
   }
   for (int j = 0; j < 4; j++) {
-    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = 2;
+    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = ALIVE + col;
   }
 
 
@@ -407,17 +423,18 @@ gboolean move_right(void *data) {
     if (x == WIDTH - 1) {
       return FALSE;
     }
-    if (board[x + 1][y] == 1) {
+    int val = board[x + 1][y] & 0xFF;
+    if (val == DEAD) {
       return FALSE;
     }
   }
-
+  int col = board[((g_tetromino->blocks)[0]).x][((g_tetromino->blocks)[0]).y] & 0xFFFFFF00;
   for (int j = 3; j >= 0; j--) {
-    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = 0;
+    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = EMPTY;
     (((g_tetromino->blocks)[j]).x)++;
   }
   for (int j = 3; j >= 0; j--) {
-    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] = 2;
+    board[((g_tetromino->blocks)[j]).x][((g_tetromino->blocks)[j]).y] += ALIVE + col;
   }
 
 
@@ -437,11 +454,8 @@ gboolean draw_callback(GtkWidget *widget, cairo_t *cr, gpointer data) {
   for (int i = 0; i < WIDTH; i++) {
     for (int j = 0; j < HEIGHT; j++) {
       if (g_board[i][j]) {
-	if (g_board[i][j] == 2) {
-	  cairo_set_source_rgb(cr, 255, 0, 0);
-	} else {
-	  cairo_set_source_rgb(cr, 255, 255, 255);
-	}
+	int col = g_board[i][j] >> 8;
+	cairo_set_source_rgb(cr, col >> 16, (col >> 8) & 0xFF, col & 0xFF);
       	cairo_rectangle(cr, CUBE_WIDTH * i, CUBE_WIDTH * j, CUBE_WIDTH, CUBE_WIDTH);
 	cairo_fill(cr);
       }
